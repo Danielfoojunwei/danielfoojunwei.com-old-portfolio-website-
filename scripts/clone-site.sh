@@ -14,6 +14,11 @@ mkdir -p "$TMP_DIR" "$OUTPUT_DIR"
 echo "Mirroring $TARGET_URL ..."
 echo "Domains: $MIRROR_DOMAINS"
 
+# wget returns non-zero on HTTP errors (e.g. 500s from CDN) even when most
+# files download fine.  Capture its exit code and only abort on fatal failures
+# (exit code 1-3 = generic/parse/IO errors).  Code 8 = server error responses,
+# which are expected for some stale Squarespace CDN assets.
+set +e
 wget \
   --mirror \
   --page-requisites \
@@ -29,18 +34,36 @@ wget \
   --domains "$MIRROR_DOMAINS" \
   --directory-prefix "$TMP_DIR" \
   "$TARGET_URL"
+WGET_EXIT=$?
+set -e
 
-SOURCE_PATH=""
+if [[ "$WGET_EXIT" -ne 0 && "$WGET_EXIT" -ne 8 ]]; then
+  echo "wget failed with exit code $WGET_EXIT" >&2
+  exit 1
+fi
+
+DOMAIN_DIR=""
 if [[ -d "$TMP_DIR/danielfoojunwei.com" ]]; then
-  SOURCE_PATH="$TMP_DIR/danielfoojunwei.com"
+  DOMAIN_DIR="danielfoojunwei.com"
 elif [[ -d "$TMP_DIR/www.danielfoojunwei.com" ]]; then
-  SOURCE_PATH="$TMP_DIR/www.danielfoojunwei.com"
+  DOMAIN_DIR="www.danielfoojunwei.com"
 else
   echo "Could not find mirrored domain folder in $TMP_DIR" >&2
   exit 1
 fi
 
-cp -a "$SOURCE_PATH/." "$OUTPUT_DIR/"
+# Copy the entire mirror tree (all domains) so that --convert-links relative
+# paths to CDN hosts (static1.squarespace.com, images.squarespace-cdn.com, etc.)
+# remain valid.
+cp -a "$TMP_DIR/." "$OUTPUT_DIR/"
+
+# Move the main domain's content to the root of OUTPUT_DIR so index.html is at
+# the top level where Vercel expects it.
+# First move CDN directories out of the way temporarily, then hoist domain files.
+MAIN_DIR="$OUTPUT_DIR/$DOMAIN_DIR"
+
+# Copy main domain contents to root (this may overwrite the domain dir itself)
+cp -a "$MAIN_DIR/." "$OUTPUT_DIR/"
 
 if [[ ! -f "$OUTPUT_DIR/index.html" && -f "$OUTPUT_DIR/index.html.html" ]]; then
   mv "$OUTPUT_DIR/index.html.html" "$OUTPUT_DIR/index.html"
