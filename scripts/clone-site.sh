@@ -14,10 +14,6 @@ mkdir -p "$TMP_DIR" "$OUTPUT_DIR"
 echo "Mirroring $TARGET_URL ..."
 echo "Domains: $MIRROR_DOMAINS"
 
-# wget may return exit code 8 for server-side HTTP errors on some resources
-# even when a usable full snapshot is produced. We validate output afterwards.
-WGET_EXIT=0
-set +e
 wget \
   --mirror \
   --page-requisites \
@@ -33,17 +29,6 @@ wget \
   --domains "$MIRROR_DOMAINS" \
   --directory-prefix "$TMP_DIR" \
   "$TARGET_URL"
-WGET_EXIT=$?
-set -e
-
-if [[ "$WGET_EXIT" -ne 0 && "$WGET_EXIT" -ne 8 ]]; then
-  echo "Mirror failed: wget exited with code $WGET_EXIT" >&2
-  exit "$WGET_EXIT"
-fi
-
-if [[ "$WGET_EXIT" -eq 8 ]]; then
-  echo "Warning: wget exited with code 8 (some resources failed). Verifying snapshot integrity..."
-fi
 
 SOURCE_PATH=""
 if [[ -d "$TMP_DIR/danielfoojunwei.com" ]]; then
